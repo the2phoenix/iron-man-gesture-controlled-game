@@ -1,0 +1,2459 @@
+<!--
+  IRON MAN: STARK PROTOCOL
+  Run with a local server — do NOT open via file://
+  Options:
+  - python -m http.server 8080
+  - VS Code Live Server extension
+  - npx serve .
+  Then open: http://localhost:8080
+-->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iron Man: Stark Protocol</title>
+  <meta name="description" content="Browser-based Iron Man gesture-controlled combat experience">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;600;700&display=swap');
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
+    }
+
+    body {
+      background: #050A14;
+      overflow: hidden;
+      font-family: 'Orbitron', sans-serif;
+      color: #E8F4FF;
+      cursor: none
+    }
+
+    #three-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0
+    }
+
+    #effects-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 5;
+      pointer-events: none
+    }
+
+    #hud-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 10;
+      pointer-events: none
+    }
+
+    #webcam-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 200px;
+      height: 150px;
+      border: 1px solid rgba(0, 207, 255, 0.4);
+      border-radius: 4px;
+      overflow: hidden;
+      z-index: 20;
+      display: none
+    }
+
+    #webcam-preview {
+      width: 100%;
+      height: 100%;
+      transform: scaleX(-1);
+      opacity: 0.7;
+      object-fit: cover
+    }
+
+    #skeleton-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%
+    }
+
+    #hidden-video {
+      display: none
+    }
+
+    #damage-overlay {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse at center, transparent 40%, rgba(255, 0, 0, 0.3) 100%);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 15;
+      transition: opacity 0.3s
+    }
+
+    #start-screen {
+      position: fixed;
+      inset: 0;
+      background: #050A14;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      cursor: pointer
+    }
+
+    #start-screen .title {
+      font-size: 64px;
+      font-weight: 900;
+      letter-spacing: 0.15em;
+      color: #E8F4FF;
+      text-shadow: 0 0 40px rgba(0, 207, 255, 0.6);
+      opacity: 0;
+      animation: fadeInUp 1s ease forwards
+    }
+
+    #start-screen .subtitle {
+      font-size: 28px;
+      font-family: 'Rajdhani', sans-serif;
+      font-weight: 600;
+      letter-spacing: 0.3em;
+      color: #00CFFF;
+      margin-top: 8px;
+      opacity: 0;
+      animation: fadeInUp 1s ease 0.5s forwards
+    }
+
+    #start-screen .reactor-icon {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #00CFFF 20%, rgba(0, 207, 255, 0.3) 60%, transparent 70%);
+      margin: 40px 0;
+      animation: reactorPulse 2s ease-in-out infinite;
+      opacity: 0;
+      animation: reactorPulse 2s ease-in-out infinite, fadeInUp 1s ease 1s forwards
+    }
+
+    #start-screen .info {
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: rgba(232, 244, 255, 0.5);
+      opacity: 0;
+      animation: fadeInUp 1s ease 1.5s forwards
+    }
+
+    #start-screen .cta {
+      font-size: 14px;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: #00CFFF;
+      margin-top: 30px;
+      border: 1px solid rgba(0, 207, 255, 0.3);
+      padding: 12px 32px;
+      border-radius: 4px;
+      opacity: 0;
+      animation: fadeInUp 1s ease 2s forwards;
+      transition: all 0.3s
+    }
+
+    #start-screen .cta:hover {
+      background: rgba(0, 207, 255, 0.1);
+      border-color: #00CFFF;
+      box-shadow: 0 0 20px rgba(0, 207, 255, 0.3)
+    }
+
+    #gesture-guide {
+      position: absolute;
+      right: 20px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(5, 10, 20, 0.7);
+      border: 1px solid rgba(0, 207, 255, 0.4);
+      padding: 15px 20px;
+      color: #00CFFF;
+      font-family: 'Rajdhani', sans-serif;
+      z-index: 50;
+      display: none;
+      pointer-events: none;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(0, 207, 255, 0.15);
+      backdrop-filter: blur(4px);
+    }
+
+    #gesture-guide h3 {
+      font-family: 'Orbitron', sans-serif;
+      margin: 0 0 12px 0;
+      font-size: 15px;
+      letter-spacing: 2px;
+      border-bottom: 1px solid rgba(0, 207, 255, 0.5);
+      padding-bottom: 8px;
+      text-transform: uppercase;
+    }
+
+    #gesture-guide ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.8;
+    }
+
+    #gesture-guide li {
+      color: #E8F4FF;
+      margin-bottom: 6px;
+    }
+
+    #gesture-guide .highlight {
+      color: #FFB700;
+      font-weight: 600;
+      margin-right: 5px;
+    }
+
+    #loading-screen {
+      position: fixed;
+      inset: 0;
+      background: #050A14;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 99
+    }
+
+    #loading-bar-container {
+      width: 300px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(0, 207, 255, 0.3);
+      border-radius: 2px;
+      margin-top: 20px
+    }
+
+    #loading-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #00CFFF, #0066FF);
+      border-radius: 2px;
+      transition: width 0.3s;
+      box-shadow: 0 0 10px rgba(0, 207, 255, 0.5)
+    }
+
+    #loading-text {
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: rgba(232, 244, 255, 0.5);
+      margin-top: 12px
+    }
+
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px)
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0)
+      }
+    }
+
+    @keyframes reactorPulse {
+
+      0%,
+      100% {
+        box-shadow: 0 0 20px rgba(0, 207, 255, 0.4), 0 0 40px rgba(0, 207, 255, 0.2)
+      }
+
+      50% {
+        box-shadow: 0 0 40px rgba(0, 207, 255, 0.8), 0 0 80px rgba(0, 207, 255, 0.4)
+      }
+    }
+
+    @keyframes criticalPulse {
+      0% {
+        opacity: 0.7
+      }
+
+      100% {
+        opacity: 1
+      }
+    }
+
+    @keyframes damageFlash {
+      0% {
+        opacity: 1
+      }
+
+      100% {
+        opacity: 0
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="three-canvas"></canvas>
+  <canvas id="effects-canvas"></canvas>
+  <canvas id="hud-canvas"></canvas>
+  <div id="webcam-container">
+    <video id="webcam-preview" autoplay playsinline></video>
+    <canvas id="skeleton-canvas"></canvas>
+  </div>
+  <video id="hidden-video" autoplay playsinline></video>
+  <div id="damage-overlay"></div>
+  <div id="start-screen">
+    <div class="title">IRON MAN</div>
+    <div class="subtitle">STARK PROTOCOL</div>
+    <div class="reactor-icon"></div>
+    <div class="info">GESTURE CONTROL ACTIVE<br>position hands in frame to begin</div>
+    <div class="cta">CLICK TO INITIALIZE</div>
+  </div>
+  <div id="gesture-guide">
+    <h3>SUIT CONTROLS</h3>
+    <ul>
+      <li><span class="highlight">Aiming:</span> Move dominant hand</li>
+      <li><span class="highlight">Repulsor:</span> Thrust open palm</li>
+      <li><span class="highlight">Charged Shot:</span> Hold 1.5s then thrust</li>
+      <li><span class="highlight">Scatter Shot:</span> Quick fist-to-palm</li>
+      <li><span class="highlight">Missiles:</span> Double index point (Lock & Drop)</li>
+      <li><span class="highlight">Unibeam:</span> Hold both palms close together</li>
+      <li><span class="highlight">Dodge:</span> Lean head Left / Right / Down</li>
+      <li><span class="highlight">Avengers:</span> Raise both fists for 2s</li>
+    </ul>
+  </div>
+
+  <div id="loading-screen">
+    <div class="title" style="font-size:18px;letter-spacing:0.2em;opacity:1">STARK INDUSTRIES</div>
+    <div id="loading-bar-container">
+      <div id="loading-bar"></div>
+    </div>
+    <div id="loading-text">Initializing systems...</div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
+  <script>
+    'use strict';
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 1: STATE MANAGEMENT
+    // ═══════════════════════════════════════════════════════
+    const GameState = {
+      MENU: 'menu', LAB: 'lab', SUIT_UP: 'suit_up', COMBAT: 'combat',
+      AVENGERS: 'avengers', DEATH: 'death', VICTORY: 'victory'
+    };
+
+    const state = {
+      current: GameState.MENU,
+      level: 0,
+      score: 0,
+      health: 100,
+      maxHealth: 100,
+      missileAmmo: 5,
+      scatterAmmo: 8,
+      killStreak: 0,
+      multiplier: 1,
+      waveIndex: 0,
+      enemies: [],
+      projectiles: [],
+      particles: [],
+      avengersUsedThisLevel: false,
+      upgradePoints: 0,
+      dodgeInvincible: false,
+      dodgeTimer: null,
+      unibeamCooldownEnd: 0,
+      lastWeaponFire: {},
+      selectedLevel: 0,
+      faceDetected: true,
+      bothHandsVisible: false,
+      waveSpawning: false,
+      combatStartTime: 0,
+      suitUpInProgress: false,
+      aimX: window.innerWidth / 2,
+      aimY: window.innerHeight / 2
+    };
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 2: THREE.JS SCENE
+    // ═══════════════════════════════════════════════════════
+    const threeCanvas = document.getElementById('three-canvas');
+    const effectsCanvas = document.getElementById('effects-canvas');
+    const hudCanvas = document.getElementById('hud-canvas');
+    const effectsCtx = effectsCanvas.getContext('2d');
+    const hudCtx = hudCanvas.getContext('2d');
+
+    function resizeCanvases() {
+      const w = window.innerWidth, h = window.innerHeight;
+      [effectsCanvas, hudCanvas].forEach(c => { c.width = w; c.height = h; });
+    }
+    resizeCanvases();
+    window.addEventListener('resize', resizeCanvases);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+    const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Lighting (deferred — added to scene but only rendered when renderer exists)
+    const ambientLight = new THREE.AmbientLight(0x0a1628, 0.5);
+    scene.add(ambientLight);
+    const arcLight = new THREE.PointLight(0x00cfff, 2, 50);
+    arcLight.position.set(0, 2, 0);
+    scene.add(arcLight);
+    const rimLight = new THREE.DirectionalLight(0x0066ff, 0.8);
+    rimLight.position.set(-5, 5, -5);
+    scene.add(rimLight);
+
+    camera.position.set(0, 2, 5);
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 3: AUDIO SYSTEM
+    // ═══════════════════════════════════════════════════════
+    const audio = {};
+    function initAudio() {
+      const files = {
+        repulsor: 'audio/repulsor.mp3',
+        explosion: 'audio/explosion.mp3',
+        unibeamCharge: 'audio/unibeam_charge.mp3',
+        suitUp: 'audio/suit_up.mp3',
+        hudStartup: 'audio/hud_startup.mp3',
+        avengersTheme: 'audio/The Avengers.mp3',
+        battleFinale: 'audio/Battle Finale.mp3'
+      };
+      for (const [key, src] of Object.entries(files)) {
+        try {
+          audio[key] = new Howl({
+            src: [src],
+            loop: key === 'battleFinale',
+            volume: key === 'battleFinale' ? 0.5 : (key === 'avengersTheme' ? 0.8 : 0.6),
+            onloaderror: () => console.warn(`Audio not found: ${src}`)
+          });
+        } catch (e) { console.warn(`Audio fallback: ${src}`); }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 4: MODEL LOADING
+    // ═══════════════════════════════════════════════════════
+    const loader = new THREE.GLTFLoader();
+    const models = {};
+    let modelsLoaded = 0;
+    const TOTAL_MODELS = 7;
+
+    const MODEL_PATHS = {
+      // lab: 'models/sci-fi_lab.glb', // DISABLED: 468MB file causes Chrome Out-Of-Memory crash
+      suit: 'models/iron_man_mark_85.glb',
+      drone: 'models/buster_drone.glb',
+      heavyDrone: 'models/sci-fi_drone.glb',
+      jet: 'models/mig-29_-_fighter_jet_-_free.glb',
+      turret: 'models/turret.glb',
+      mothership: 'models/mothership_fortnite.glb',
+      shield: 'models/captain_america_-_shield.glb'
+    };
+
+    function loadModel(key, path) {
+      return new Promise((resolve) => {
+        loader.load(path, (gltf) => {
+          const model = gltf.scene;
+          // Auto-scale models to reasonable sizes
+          const box = new THREE.Box3().setFromObject(model);
+          const size = box.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const targetSizes = { lab: 20, suit: 3, drone: 1.5, heavyDrone: 2, jet: 3, turret: 1.5, mothership: 8, shield: 1 };
+          const target = targetSizes[key] || 2;
+          if (maxDim > 0) model.scale.multiplyScalar(target / maxDim);
+          model.visible = (key === 'lab');
+          scene.add(model);
+          models[key] = model;
+          modelsLoaded++;
+          updateLoadingBar();
+          resolve(model);
+        }, undefined, (error) => {
+          console.error(`Failed to load ${path}:`, error);
+          // Placeholder geometry
+          const geo = new THREE.BoxGeometry(1, 1, 1);
+          const mat = new THREE.MeshStandardMaterial({ color: 0x00cfff, wireframe: true });
+          const placeholder = new THREE.Mesh(geo, mat);
+          placeholder.visible = (key === 'lab');
+          scene.add(placeholder);
+          models[key] = placeholder;
+          modelsLoaded++;
+          updateLoadingBar();
+          resolve(placeholder);
+        });
+      });
+    }
+
+    function updateLoadingBar() {
+      const pct = (modelsLoaded / TOTAL_MODELS) * 100;
+      const bar = document.getElementById('loading-bar');
+      const text = document.getElementById('loading-text');
+      if (bar) bar.style.width = pct + '%';
+      if (text) text.textContent = `Loading assets... ${modelsLoaded}/${TOTAL_MODELS}`;
+    }
+
+    async function loadAllModels() {
+      const promises = Object.entries(MODEL_PATHS).map(([k, p]) => loadModel(k, p));
+      await Promise.all(promises);
+      console.log('All models loaded');
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 5: PROCEDURAL BOSS GENERATORS
+    // ═══════════════════════════════════════════════════════
+    function createProceduralBoss(type) {
+      const group = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.8, roughness: 0.3 });
+      const glowMat = new THREE.MeshStandardMaterial({ color: 0xff2020, emissive: 0xff2020, emissiveIntensity: 0.5 });
+
+      if (type === 'tank') {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(4, 1.5, 6), mat);
+        const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.2, 1, 8), mat);
+        turretBase.position.y = 1.2;
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 3, 8), mat);
+        barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 1.5, 2);
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.3), glowMat);
+        eye.position.set(0, 1.8, 0.5);
+        group.add(body, turretBase, barrel, eye);
+      } else if (type === 'carrier') {
+        const hull = new THREE.Mesh(new THREE.BoxGeometry(5, 2, 12), mat);
+        const deck = new THREE.Mesh(new THREE.BoxGeometry(6, 0.3, 14), mat);
+        deck.position.y = 1.1;
+        const tower = new THREE.Mesh(new THREE.BoxGeometry(1.5, 3, 2), mat);
+        tower.position.set(2, 2.5, -2);
+        const light1 = new THREE.Mesh(new THREE.SphereGeometry(0.2), glowMat);
+        light1.position.set(0, 1.5, 6);
+        group.add(hull, deck, tower, light1);
+      } else if (type === 'warship') {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(8, 3, 16), mat);
+        const bridge = new THREE.Mesh(new THREE.BoxGeometry(3, 4, 4), mat);
+        bridge.position.set(0, 3.5, -3);
+        for (let i = 0; i < 4; i++) {
+          const cannon = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 4, 8), mat);
+          cannon.rotation.x = Math.PI / 2;
+          cannon.position.set((i - 1.5) * 2, 2, 6);
+          group.add(cannon);
+        }
+        const core = new THREE.Mesh(new THREE.SphereGeometry(1), glowMat);
+        core.position.set(0, 2, 0);
+        group.add(body, bridge, core);
+      } else if (type === 'ironmonger') {
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(4, 5, 3), mat);
+        const head = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), mat);
+        head.position.y = 4;
+        const reactor = new THREE.Mesh(new THREE.SphereGeometry(0.6), glowMat);
+        reactor.position.set(0, 1, 1.6);
+        for (let side of [-1, 1]) {
+          const arm = new THREE.Mesh(new THREE.BoxGeometry(1.5, 4, 1.5), mat);
+          arm.position.set(side * 3, 0, 0);
+          const leg = new THREE.Mesh(new THREE.BoxGeometry(1.5, 5, 1.5), mat);
+          leg.position.set(side * 1.5, -5, 0);
+          group.add(arm, leg);
+        }
+        group.add(torso, head, reactor);
+      }
+      group.scale.set(1.5, 1.5, 1.5);
+      return group;
+    }
+
+    // Boss configs for levels 2-5
+    const BOSS_CONFIGS = {
+      tank: { health: 800, speed: 0.008, damage: 35, points: 3000 },
+      carrier: { health: 1200, speed: 0.005, damage: 45, points: 5000 },
+      warship: { health: 2000, speed: 0.003, damage: 50, points: 8000 },
+      ironmonger: { health: 3000, speed: 0.01, damage: 60, points: 15000 }
+    };
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 6: WEAPON & LEVEL DATA
+    // ═══════════════════════════════════════════════════════
+    const WEAPONS = {
+      repulsor: { damage: 25, cooldown: 200, ammo: Infinity },
+      chargedRepulsor: { damage: 100, cooldown: 1500, ammo: Infinity },
+      missile: { damage: 150, cooldown: 800, ammo: 5 },
+      unibeam: { damage: 400, cooldown: 8000, ammo: Infinity },
+      scatter: { damage: 60, cooldown: 1000, ammo: 8 }
+    };
+
+    const ENEMY_CONFIGS = {
+      drone: { health: 30, speed: 0.05, damage: 10, points: 100 },
+      heavyDrone: { health: 100, speed: 0.02, damage: 25, points: 300 },
+      jet: { health: 60, speed: 0.08, damage: 20, points: 200 },
+      turret: { health: 150, speed: 0, damage: 30, points: 400 },
+      mothership: { health: 500, speed: 0.01, damage: 40, points: 2000 }
+    };
+
+    const LEVELS = [
+      { waves: [{ drone: 5 }, { drone: 8 }, { drone: 12 }, { boss: 'mothership' }], skybox: 'orbit', name: 'LOW ORBIT', subtitle: 'ORBITAL DEFENSE' },
+      { waves: [{ drone: 6, heavyDrone: 2 }, { drone: 8, heavyDrone: 4 }, { drone: 10, heavyDrone: 6 }, { boss: 'tank' }], skybox: 'city', name: 'CITY', subtitle: 'CITY SIEGE' },
+      { waves: [{ jet: 3, turret: 2 }, { jet: 5, turret: 3 }, { jet: 6, turret: 4, drone: 4 }, { boss: 'carrier' }], skybox: 'ocean', name: 'OCEAN', subtitle: 'OCEAN ASSAULT' },
+      { waves: [{ drone: 8, heavyDrone: 4, jet: 2 }, { drone: 10, heavyDrone: 6, jet: 4 }, { drone: 12, heavyDrone: 8, jet: 6, turret: 2 }, { boss: 'warship' }], skybox: 'space', name: 'DEEP SPACE', subtitle: 'VOID BATTLE' },
+      { waves: [{ drone: 10, heavyDrone: 5, jet: 4, turret: 3 }, { drone: 15, heavyDrone: 8, jet: 6, turret: 4 }, { drone: 20, heavyDrone: 10, jet: 8, turret: 6 }, { boss: 'ironmonger' }], skybox: 'stark_tower', name: 'STARK TOWER', subtitle: 'FINAL STAND' }
+    ];
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 7: UPGRADE SYSTEM
+    // ═══════════════════════════════════════════════════════
+    const upgradeTree = {
+      repulsorDamage: { level: 0, max: 5, cost: [100, 200, 400, 800, 1600], multiplier: 1.25, label: 'Repulsor Damage' },
+      repulsorFireRate: { level: 0, max: 5, cost: [100, 200, 400, 800, 1600], multiplier: 0.85, label: 'Fire Rate' },
+      missileAmmo: { level: 0, max: 5, cost: [150, 300, 600, 1200, 2400], bonus: 2, label: 'Missile Ammo' },
+      unibeamCooldown: { level: 0, max: 5, cost: [200, 400, 800, 1600, 3200], multiplier: 0.80, label: 'Unibeam CD' },
+      maxHealth: { level: 0, max: 5, cost: [100, 200, 400, 800, 1600], bonus: 20, label: 'Max Health' },
+      damageReduction: { level: 0, max: 5, cost: [150, 300, 600, 1200, 2400], multiplier: 0.90, label: 'Armor' },
+      enemyRadar: { level: 0, max: 1, cost: [500], unlocks: 'radar', label: 'Radar' },
+      weakPointDetect: { level: 0, max: 1, cost: [800], unlocks: 'weakpoints', label: 'Weak Points' }
+    };
+
+    function getUpgradeMultiplier(key) {
+      const u = upgradeTree[key];
+      if (u.multiplier) return Math.pow(u.multiplier, u.level);
+      if (u.bonus) return u.bonus * u.level;
+      return u.level > 0;
+    }
+
+    function purchaseUpgrade(key) {
+      const u = upgradeTree[key];
+      if (u.level >= u.max) return false;
+      const cost = u.cost[u.level];
+      if (state.upgradePoints < cost) return false;
+      state.upgradePoints -= cost;
+      u.level++;
+      applyUpgrades();
+      return true;
+    }
+
+    function applyUpgrades() {
+      state.maxHealth = 100 + getUpgradeMultiplier('maxHealth');
+      state.missileAmmo = 5 + getUpgradeMultiplier('missileAmmo');
+      state.scatterAmmo = 8;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 8: MEDIAPIPE HANDS
+    // ═══════════════════════════════════════════════════════
+    const webcamContainer = document.getElementById('webcam-container');
+    const webcamPreview = document.getElementById('webcam-preview');
+    const skeletonCanvas = document.getElementById('skeleton-canvas');
+    const skeletonCtx = skeletonCanvas.getContext('2d');
+    const hiddenVideo = document.getElementById('hidden-video');
+
+    let leftHandLandmarks = null;
+    let rightHandLandmarks = null;
+    let mpHands = null;
+    let mpFaceMesh = null;
+    let mpCamera = null;
+
+    function initMediaPipe() {
+      mpHands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+      mpHands.setOptions({
+        maxNumHands: 2, modelComplexity: 1,
+        minDetectionConfidence: 0.7, minTrackingConfidence: 0.6
+      });
+      mpHands.onResults(onHandResults);
+
+      mpFaceMesh = new FaceMesh({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+      });
+      mpFaceMesh.setOptions({
+        maxNumFaces: 1, refineLandmarks: false,
+        minDetectionConfidence: 0.5, minTrackingConfidence: 0.5
+      });
+      mpFaceMesh.onResults(onFaceResults);
+    }
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+        hiddenVideo.srcObject = stream;
+        webcamPreview.srcObject = stream;
+        await hiddenVideo.play();
+        webcamContainer.style.display = 'block';
+        skeletonCanvas.width = 200;
+        skeletonCanvas.height = 150;
+
+        let frameCount = 0;
+        let lastFrameTime = performance.now();
+
+        async function processFrame() {
+          const now = performance.now();
+          if (now - lastFrameTime > 30) { // ~30fps throttle to prevent GPU choke
+            try {
+              // Ensure video actually has dimensions before feeding to WebGL
+              if (hiddenVideo.readyState >= 2 && hiddenVideo.videoWidth > 0 && hiddenVideo.videoHeight > 0) {
+                await mpHands.send({ image: hiddenVideo });
+                frameCount++;
+                if (frameCount % 2 === 0) { // Face mesh every other frame for performance
+                  await mpFaceMesh.send({ image: hiddenVideo });
+                }
+              }
+              lastFrameTime = now;
+            } catch (e) {
+              // Transient WebGL errors (often happening on refresh or tab switch)
+              // are caught here so the loop doesn't permanently die.
+              console.warn('Ignored transient MediaPipe WebGL frame drop', e);
+            }
+          }
+          // GUARANTEE the loop continues even if a frame throws an error
+          requestAnimationFrame(processFrame);
+        }
+        processFrame();
+      } catch (e) {
+        console.error('Camera access denied:', e);
+        showCameraError();
+      }
+    }
+
+    function showCameraError() {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:#050A14;display:flex;align-items:center;justify-content:center;z-index:200;color:#E8F4FF;font-family:Orbitron;text-align:center;padding:40px';
+      overlay.innerHTML = '<div><div style="font-size:20px;color:#FF2020;margin-bottom:20px">CAMERA ACCESS REQUIRED</div><div style="font-size:12px;letter-spacing:0.15em;color:rgba(232,244,255,0.6)">Hand tracking requires camera access.<br>Refresh and allow camera permission.</div></div>';
+      document.body.appendChild(overlay);
+    }
+
+    function onHandResults(results) {
+      leftHandLandmarks = null;
+      rightHandLandmarks = null;
+      state.bothHandsVisible = false;
+
+      if (results.multiHandLandmarks && results.multiHandedness) {
+        for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+          const label = results.multiHandedness[i].label;
+          // MediaPipe mirrors: 'Left' in image = user's right hand
+          if (label === 'Left') rightHandLandmarks = results.multiHandLandmarks[i];
+          else leftHandLandmarks = results.multiHandLandmarks[i];
+        }
+        if (leftHandLandmarks && rightHandLandmarks) state.bothHandsVisible = true;
+      }
+
+      // Draw skeleton on webcam overlay
+      drawSkeleton(results);
+    }
+
+    function drawSkeleton(results) {
+      skeletonCtx.clearRect(0, 0, skeletonCanvas.width, skeletonCanvas.height);
+      if (!results.multiHandLandmarks) return;
+      const w = skeletonCanvas.width, h = skeletonCanvas.height;
+
+      const connections = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
+
+      for (const landmarks of results.multiHandLandmarks) {
+        // Draw connections
+        skeletonCtx.strokeStyle = '#00CFFF';
+        skeletonCtx.lineWidth = 1.5;
+        for (const [a, b] of connections) {
+          skeletonCtx.beginPath();
+          skeletonCtx.moveTo((1 - landmarks[a].x) * w, landmarks[a].y * h);
+          skeletonCtx.lineTo((1 - landmarks[b].x) * w, landmarks[b].y * h);
+          skeletonCtx.stroke();
+        }
+        // Draw landmarks
+        for (const lm of landmarks) {
+          skeletonCtx.fillStyle = '#FF00FF';
+          skeletonCtx.beginPath();
+          skeletonCtx.arc((1 - lm.x) * w, lm.y * h, 2, 0, Math.PI * 2);
+          skeletonCtx.fill();
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 9: FACE MESH — DODGE SYSTEM
+    // ═══════════════════════════════════════════════════════
+    let baseNoseX = null;
+    let baseNoseY = null;
+
+    function onFaceResults(results) {
+      if (!results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
+        state.faceDetected = false;
+        return;
+      }
+      state.faceDetected = true;
+      const nose = results.multiFaceLandmarks[0][1];
+      detectDodge(nose);
+    }
+
+    function detectDodge(nose) {
+      if (state.current !== GameState.COMBAT) return;
+      if (!baseNoseX) { baseNoseX = nose.x; baseNoseY = nose.y; return; }
+      const deltaX = nose.x - baseNoseX;
+      const deltaY = nose.y - baseNoseY;
+      if (deltaX > 0.08) triggerDodge('right');
+      else if (deltaX < -0.08) triggerDodge('left');
+      else if (deltaY > 0.06) triggerDodge('duck');
+      else { baseNoseX = nose.x * 0.1 + baseNoseX * 0.9; baseNoseY = nose.y * 0.1 + baseNoseY * 0.9; }
+    }
+
+    function triggerDodge(direction) {
+      if (state.dodgeInvincible) return;
+      state.dodgeInvincible = true;
+      // Visual dodge offset
+      const dodgeOffset = direction === 'left' ? -2 : direction === 'right' ? 2 : 0;
+      const dodgeY = direction === 'duck' ? -1.5 : 0;
+
+      const startX = camera.position.x, startY = camera.position.y;
+      const start = Date.now();
+      function animateDodge() {
+        const t = (Date.now() - start) / 500;
+        if (t < 0.5) {
+          camera.position.x = startX + dodgeOffset * Math.sin(t * Math.PI);
+          camera.position.y = startY + dodgeY * Math.sin(t * Math.PI);
+        } else if (t >= 1) {
+          camera.position.x = startX;
+          camera.position.y = startY;
+          state.dodgeInvincible = false;
+          return;
+        }
+        requestAnimationFrame(animateDodge);
+      }
+      animateDodge();
+      setTimeout(() => { state.dodgeInvincible = false; }, 500);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 10: GESTURE DETECTION
+    // ═══════════════════════════════════════════════════════
+    function isFingerExtended(landmarks, tipIdx, mcpIdx, pipIdx) {
+      const tip = new THREE.Vector3(landmarks[tipIdx].x, landmarks[tipIdx].y, landmarks[tipIdx].z);
+      const mcp = new THREE.Vector3(landmarks[mcpIdx].x, landmarks[mcpIdx].y, landmarks[mcpIdx].z);
+      const pip = new THREE.Vector3(landmarks[pipIdx].x, landmarks[pipIdx].y, landmarks[pipIdx].z);
+      const v1 = new THREE.Vector3().subVectors(pip, mcp).normalize();
+      const v2 = new THREE.Vector3().subVectors(tip, pip).normalize();
+      const angle = Math.acos(Math.max(-1, Math.min(1, v1.dot(v2))));
+      return angle < Math.PI / 4;
+    }
+
+    function detectGestures(landmarks) {
+      const indexExt = isFingerExtended(landmarks, 8, 5, 6);
+      const middleExt = isFingerExtended(landmarks, 12, 9, 10);
+      const ringExt = isFingerExtended(landmarks, 16, 13, 14);
+      const pinkyExt = isFingerExtended(landmarks, 20, 17, 18);
+      if (indexExt && middleExt && ringExt && pinkyExt) return 'PALM_THRUST';
+      if (!indexExt && !middleExt && !ringExt && !pinkyExt) return 'FIST';
+      if (indexExt && middleExt && !ringExt && !pinkyExt) return 'TWO_FINGER_POINT';
+      if (indexExt && !middleExt && !ringExt && !pinkyExt) return 'INDEX_POINT';
+      return null;
+    }
+
+    // Charged repulsor detection
+    let palmOpenStartTime = null;
+    const CHARGE_DURATION = 1500;
+    function checkChargedRepulsor(gesture) {
+      if (gesture === 'PALM_THRUST') {
+        if (!palmOpenStartTime) palmOpenStartTime = Date.now();
+        if (Date.now() - palmOpenStartTime >= CHARGE_DURATION) return 'CHARGED_REPULSOR';
+        return 'REPULSOR';
+      }
+      palmOpenStartTime = null;
+      return null;
+    }
+
+    // Scatter shot detection — fist then immediate palm open
+    let lastFistTime = null;
+    function checkScatterShot(gesture) {
+      if (gesture === 'FIST') { lastFistTime = Date.now(); return false; }
+      if (gesture === 'PALM_THRUST' && lastFistTime && Date.now() - lastFistTime < 300) {
+        lastFistTime = null; return true;
+      }
+      if (gesture !== 'FIST') lastFistTime = null;
+      return false;
+    }
+
+    // Unibeam detection
+    function detectUnibeam(leftLM, rightLM) {
+      if (!leftLM || !rightLM) return false;
+      const lGesture = detectGestures(leftLM);
+      const rGesture = detectGestures(rightLM);
+      if (lGesture !== 'PALM_THRUST' || rGesture !== 'PALM_THRUST') return false;
+      const dist = Math.sqrt(Math.pow(leftLM[9].x - rightLM[9].x, 2) + Math.pow(leftLM[9].y - rightLM[9].y, 2));
+      return dist < 0.15;
+    }
+
+    // Missile lock detection
+    function detectMissileLock(leftLM, rightLM) {
+      if (!leftLM || !rightLM) return false;
+      const lGesture = detectGestures(leftLM);
+      const rGesture = detectGestures(rightLM);
+      return (lGesture === 'INDEX_POINT' || lGesture === 'TWO_FINGER_POINT') &&
+        (rGesture === 'INDEX_POINT' || rGesture === 'TWO_FINGER_POINT');
+    }
+
+    // Suit up detection
+    let armsCrossedTime = null;
+    function detectSuitUp(leftLM, rightLM) {
+      if (!leftLM || !rightLM) return false;
+
+      // Calculate absolute horizontal distance between wrists (ignoring Left/Right labels)
+      // This is crucial because MediaPipe frequently swaps hand labels when wrists cross.
+      const distX = Math.abs(leftLM[0].x - rightLM[0].x);
+
+      // Crossed state: Wrists are very close together horizontally (overlap)
+      const isCrossed = distX < 0.2;
+
+      if (isCrossed) {
+        if (!armsCrossedTime) armsCrossedTime = Date.now();
+      }
+
+      // Give 2.5 seconds to complete the "spread" action
+      if (armsCrossedTime && Date.now() - armsCrossedTime > 2500) {
+        armsCrossedTime = null;
+      }
+
+      // Spread state: Wrists are moved far apart
+      const isSpread = distX > 0.6;
+
+      if (isSpread && armsCrossedTime) {
+        armsCrossedTime = null; // Sequence complete!
+        return true;
+      }
+
+      return false;
+    }
+
+    // Avengers Easter egg detection
+    let bothFistsRaisedTime = null;
+    const AVENGERS_HOLD = 2000;
+    let avengersProgress = 0;
+    function detectAvengersPose(leftLM, rightLM) {
+      if (!leftLM || !rightLM) { bothFistsRaisedTime = null; avengersProgress = 0; return false; }
+      const leftFist = detectGestures(leftLM) === 'FIST';
+      const rightFist = detectGestures(rightLM) === 'FIST';
+      const leftHigh = leftLM[0].y < 0.4;
+      const rightHigh = rightLM[0].y < 0.4;
+      if (leftFist && rightFist && leftHigh && rightHigh) {
+        if (!bothFistsRaisedTime) bothFistsRaisedTime = Date.now();
+        avengersProgress = Math.min(1, (Date.now() - bothFistsRaisedTime) / AVENGERS_HOLD);
+        if (Date.now() - bothFistsRaisedTime >= AVENGERS_HOLD) {
+          bothFistsRaisedTime = null; avengersProgress = 0; return true;
+        }
+      } else { bothFistsRaisedTime = null; avengersProgress = 0; }
+      return false;
+    }
+
+    // Missile lock state
+    let missileLockStart = null;
+    let missileLocked = false;
+    let missileTarget = null;
+
+    function processGestures() {
+      // Show or hide gesture guide
+      const guide = document.getElementById('gesture-guide');
+      if (guide) guide.style.display = (state.current === GameState.COMBAT || state.current === GameState.LAB) ? 'block' : 'none';
+
+      // Update Aiming reticle from dominant hand
+      const activeHand = rightHandLandmarks || leftHandLandmarks;
+      if (activeHand) {
+        // Smoothly interpolate for smooth hand tracking
+        const targetX = activeHand[9].x * window.innerWidth;
+        const targetY = activeHand[9].y * window.innerHeight;
+        state.aimX += (targetX - state.aimX) * 0.4;
+        state.aimY += (targetY - state.aimY) * 0.4;
+      } else {
+        // Default to center if no hands visible
+        state.aimX += (window.innerWidth / 2 - state.aimX) * 0.1;
+        state.aimY += (window.innerHeight / 2 - state.aimY) * 0.1;
+      }
+
+      if (state.current === GameState.COMBAT) {
+        // Priority 1: Avengers
+        if (!state.avengersUsedThisLevel && detectAvengersPose(leftHandLandmarks, rightHandLandmarks)) {
+          triggerAvengersEasterEgg(); return;
+        }
+        // Priority 3: Unibeam
+        if (detectUnibeam(leftHandLandmarks, rightHandLandmarks)) {
+          fireWeapon('unibeam'); return;
+        }
+        // Priority 4: Missile Lock
+        if (detectMissileLock(leftHandLandmarks, rightHandLandmarks)) {
+          handleMissileLock(); return;
+        } else { missileLockStart = null; missileLocked = false; missileTarget = null; }
+
+        // Single hand weapons (use right hand primarily)
+        const hand = rightHandLandmarks || leftHandLandmarks;
+        if (!hand) return;
+        const gesture = detectGestures(hand);
+
+        // Priority 6: Scatter Shot
+        if (checkScatterShot(gesture)) { fireWeapon('scatter'); return; }
+        // Priority 5: Charged Repulsor
+        const chargeResult = checkChargedRepulsor(gesture);
+        if (chargeResult === 'CHARGED_REPULSOR') { fireWeapon('chargedRepulsor'); palmOpenStartTime = null; return; }
+        // Priority 7: Repulsor
+        if (gesture === 'PALM_THRUST' && !palmOpenStartTime) { palmOpenStartTime = Date.now(); }
+        if (gesture === 'PALM_THRUST' && palmOpenStartTime && Date.now() - palmOpenStartTime < 200) {
+          fireWeapon('repulsor');
+        }
+      } else if (state.current === GameState.LAB) {
+        // Priority 2: Suit Up
+        if (detectSuitUp(leftHandLandmarks, rightHandLandmarks)) {
+          startSuitUpSequence(); return;
+        }
+        // Lab interactions
+        handleLabInteraction();
+      }
+    }
+
+    // Missile lock handler
+    function handleMissileLock() {
+      if (state.missileAmmo <= 0) return;
+      if (!missileLockStart) { missileLockStart = Date.now(); missileTarget = findNearestEnemy(); }
+      if (Date.now() - missileLockStart > 800) { missileLocked = true; }
+    }
+
+    function releaseMissile() {
+      if (missileLocked && missileTarget && state.missileAmmo > 0) {
+        fireWeapon('missile');
+        missileLockStart = null; missileLocked = false; missileTarget = null;
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 11: ENEMY CLASS & COMBAT SYSTEM
+    // ═══════════════════════════════════════════════════════
+    const MAX_ENEMIES = 20;
+    class Enemy {
+      constructor(type, position) {
+        this.type = type;
+        const config = ENEMY_CONFIGS[type] || BOSS_CONFIGS[type] || ENEMY_CONFIGS.drone;
+        this.health = config.health;
+        this.maxHealth = config.health;
+        this.speed = config.speed;
+        this.damage = config.damage;
+        this.points = config.points;
+        this.alive = true;
+        this.isBoss = !!BOSS_CONFIGS[type];
+        this.lastAttack = 0;
+        this.attackInterval = type === 'turret' ? 1500 : type === 'drone' ? 2000 : 1500;
+        this.phase = 1;
+        this.weakPoints = [];
+
+        // Create 3D model
+        if (this.isBoss && type !== 'mothership') {
+          this.model = createProceduralBoss(type);
+        } else if (models[type]) {
+          this.model = models[type].clone();
+        } else {
+          const geo = new THREE.BoxGeometry(2, 2, 2); // Larger fallback boxes
+          const mat = new THREE.MeshStandardMaterial({ color: 0xff2020, emissive: 0xff0000, emissiveIntensity: 0.6 });
+          this.model = new THREE.Mesh(geo, mat);
+        }
+        this.model.position.copy(position);
+        this.model.visible = true;
+        scene.add(this.model);
+
+        if (type === 'mothership' || this.isBoss) this.setupWeakPoints();
+      }
+
+      setupWeakPoints() {
+        for (let i = 0; i < 3; i++) {
+          const wp = new THREE.Mesh(
+            new THREE.SphereGeometry(0.3),
+            new THREE.MeshStandardMaterial({ color: 0xFFB700, emissive: 0xFFB700, emissiveIntensity: 1 })
+          );
+          wp.position.set((i - 1) * 2, Math.random() * 2, Math.random());
+          this.model.add(wp);
+          this.weakPoints.push({ mesh: wp, hit: false });
+        }
+      }
+
+      update(delta) {
+        if (!this.alive) return;
+        const dir = new THREE.Vector3();
+        dir.subVectors(camera.position, this.model.position).normalize();
+
+        if (this.type === 'jet') {
+          // Linear attack runs
+          this.model.position.x += Math.sin(Date.now() * 0.001) * this.speed * 2;
+          this.model.position.z += this.speed;
+          if (this.model.position.z > 5) this.model.position.z = -30;
+        } else if (this.type === 'turret') {
+          this.model.lookAt(camera.position);
+        } else if (this.type === 'drone') {
+          // Erratic swarm movement
+          this.model.position.x += Math.sin(Date.now() * 0.003 + this.model.id) * 0.02;
+          this.model.position.y += Math.cos(Date.now() * 0.002 + this.model.id) * 0.01;
+          this.model.position.add(dir.multiplyScalar(this.speed));
+        } else {
+          this.model.position.add(dir.multiplyScalar(this.speed));
+        }
+        this.model.lookAt(camera.position);
+
+        // Attack player
+        const distToPlayer = this.model.position.distanceTo(camera.position);
+        if (distToPlayer < 15 && Date.now() - this.lastAttack > this.attackInterval) {
+          this.attackPlayer();
+          this.lastAttack = Date.now();
+        }
+
+        // Boss phase 2
+        if (this.isBoss && this.health < this.maxHealth * 0.5 && this.phase === 1) {
+          this.phase = 2;
+          this.speed *= 1.5;
+          this.attackInterval *= 0.7;
+        }
+      }
+
+      attackPlayer() {
+        if (state.dodgeInvincible) return;
+        const dmgReduction = getUpgradeMultiplier('damageReduction');
+        const dmg = Math.round(this.damage * (typeof dmgReduction === 'number' && dmgReduction < 1 ? dmgReduction : 1));
+        state.health = Math.max(0, state.health - dmg);
+        showDamageFlash();
+        updateCameraState('hit');
+        if (state.health <= 0) handlePlayerDeath();
+        // Create enemy projectile visual
+        createEnemyProjectile(this.model.position.clone());
+      }
+
+      takeDamage(amount) {
+        this.health -= amount;
+
+        // Floating damage number
+        const sp = worldToScreen(this.model.position);
+        state.particles.push({
+          type: 'scoreFloat', x: sp.x + (Math.random() - 0.5) * 40, y: sp.y + (Math.random() - 0.5) * 40,
+          vy: -2, life: 1.0, text: Math.round(amount), color: '#FF4444'
+        });
+
+        // Strong flash effect
+        this.model.traverse(c => {
+          if (c.material) {
+            c.material.emissive = new THREE.Color(0xffffff);
+            c.material.emissiveIntensity = 2; // Brighter flash
+            setTimeout(() => {
+              if (c.material && this.alive) {
+                c.material.emissive = new THREE.Color(0x000000);
+                c.material.emissiveIntensity = 1;
+              }
+            }, 200); // Longer flash duration
+          }
+        });
+        if (this.health <= 0) this.die();
+      }
+
+      die() {
+        this.alive = false;
+        createExplosion(this.model.position.clone());
+        if (audio.explosion) audio.explosion.play();
+        // Score
+        state.score += Math.round(this.points * state.multiplier);
+        state.killStreak++;
+        state.multiplier = 1 + Math.floor(state.killStreak / 3) * 0.5;
+        // Dispose
+        scene.remove(this.model);
+        this.model.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) { if (Array.isArray(c.material)) c.material.forEach(m => m.dispose()); else c.material.dispose(); } });
+      }
+    }
+
+    function findNearestEnemy() {
+      let nearest = null, minDist = Infinity;
+      for (const e of state.enemies) {
+        if (!e.alive) continue;
+        const d = e.model.position.distanceTo(camera.position);
+        if (d < minDist) { minDist = d; nearest = e; }
+      }
+      return nearest;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 12: WEAPON FIRING
+    // ═══════════════════════════════════════════════════════
+    function fireWeapon(type) {
+      const now = Date.now();
+      const weapon = WEAPONS[type];
+      if (!weapon) return;
+      const lastFired = state.lastWeaponFire[type] || 0;
+      let cooldown = weapon.cooldown;
+      if (type === 'repulsor') cooldown *= getUpgradeMultiplier('repulsorFireRate') || 1;
+      if (type === 'unibeam') {
+        cooldown *= getUpgradeMultiplier('unibeamCooldown') || 1;
+        if (now < state.unibeamCooldownEnd) return;
+      }
+      if (now - lastFired < cooldown) return;
+
+      // Ammo check
+      if (type === 'missile') { if (state.missileAmmo <= 0) return; state.missileAmmo--; }
+      if (type === 'scatter') { if (state.scatterAmmo <= 0) return; state.scatterAmmo--; }
+
+      state.lastWeaponFire[type] = now;
+
+      // Calculate damage with upgrades
+      let damage = weapon.damage;
+      if (type === 'repulsor' || type === 'chargedRepulsor') damage *= getUpgradeMultiplier('repulsorDamage') || 1;
+
+      // Audio
+      if (type === 'repulsor' || type === 'chargedRepulsor' || type === 'scatter') {
+        if (audio.repulsor) audio.repulsor.play();
+      }
+      if (type === 'unibeam') {
+        if (audio.unibeamCharge) audio.unibeamCharge.play();
+        state.unibeamCooldownEnd = now + cooldown;
+        updateCameraState('firing');
+        setTimeout(() => updateCameraState('normal'), 2000);
+      }
+
+      // Create projectile and hit detection
+      const handPos = new THREE.Vector3((Math.random() > 0.5 ? 1 : -1) * 1.5, camera.position.y - 1, camera.position.z - 1);
+
+      if (type === 'unibeam') {
+        // Beam hits everything in a cone
+        for (const e of state.enemies) {
+          if (!e.alive) continue;
+          const angle = getAngleToEnemy(e);
+          if (angle < 0.3) e.takeDamage(damage);
+        }
+        createUnibeamEffect();
+      } else if (type === 'scatter') {
+        // Scatter hits in cone pattern
+        for (const e of state.enemies) {
+          if (!e.alive) continue;
+          const dist = e.model.position.distanceTo(camera.position);
+          if (dist < 20 && getAngleToEnemy(e) < 0.5) {
+            e.takeDamage(damage / 4);
+            create3DLaser(camera.position.clone().add(new THREE.Vector3(0, -1, -1)), e.model.position.clone(), 0x00CFFF, 0.1);
+          }
+        }
+        createScatterEffect();
+      } else if (type === 'missile' && missileTarget) {
+        missileTarget.takeDamage(damage);
+        create3DLaser(handPos, missileTarget.model.position.clone(), 0xFF2020, 0.4);
+        createExplosion(missileTarget.model.position.clone());
+      } else {
+        // Repulsor / charged — hit nearest in line of sight
+        const target = findNearestEnemy();
+        let targetPos = camera.position.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(50)); // Default fire into distance
+        if (target && getAngleToEnemy(target) < 0.4) {
+          target.takeDamage(damage);
+          targetPos = target.model.position.clone();
+        }
+
+        // Shoot 3D laser
+        const color = type === 'chargedRepulsor' ? 0xFFFFFF : 0x00CFFF;
+        const width = type === 'chargedRepulsor' ? 0.6 : 0.2;
+        create3DLaser(handPos, targetPos, color, width);
+      }
+    }
+
+    function getAimRayDirection() {
+      const pointer = new THREE.Vector2();
+      pointer.x = (state.aimX / window.innerWidth) * 2 - 1;
+      pointer.y = -(state.aimY / window.innerHeight) * 2 + 1;
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(pointer, camera);
+      return raycaster.ray.direction;
+    }
+
+    function getAngleToEnemy(enemy) {
+      if (!enemy || !enemy.model) return Math.PI;
+      const toEnemy = new THREE.Vector3().subVectors(enemy.model.position, camera.position).normalize();
+      return Math.acos(Math.max(-1, Math.min(1, getAimRayDirection().dot(toEnemy))));
+    }
+
+    function findNearestEnemy() {
+      let nearest = null, minAngle = Infinity;
+      for (const e of state.enemies) {
+        if (!e.alive) continue;
+        const angle = getAngleToEnemy(e);
+        if (angle < minAngle) { minAngle = angle; nearest = e; }
+      }
+      return nearest;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 13: VISUAL EFFECTS
+    // ═══════════════════════════════════════════════════════
+    function create3DLaser(startPos, endPos, colorHex, width) {
+      const distance = startPos.distanceTo(endPos);
+      const geometry = new THREE.CylinderGeometry(width, width, distance, 8);
+      geometry.translate(0, distance / 2, 0); // Put origin at start
+      const material = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending });
+      const laser = new THREE.Mesh(geometry, material);
+      laser.position.copy(startPos);
+      laser.lookAt(endPos);
+      laser.rotateX(Math.PI / 2); // Orient along Z axis toward target
+      scene.add(laser);
+
+      const startTime = Date.now();
+      const duration = 200; // 200ms laser
+      function animateLaser() {
+        const t = (Date.now() - startTime) / duration;
+        if (t >= 1) {
+          scene.remove(laser);
+          geometry.dispose();
+          material.dispose();
+          return;
+        }
+        laser.material.opacity = 0.9 * (1 - t);
+        laser.scale.set(1 - t, 1, 1 - t); // Shrink visually
+        requestAnimationFrame(animateLaser);
+      }
+      animateLaser();
+    }
+
+    function createUnibeamEffect() {
+      const cx = effectsCanvas.width / 2;
+      state.particles.push({
+        type: 'unibeam', x: cx, y: effectsCanvas.height, w: 60,
+        life: 1.5, color: '#00CFFF'
+      });
+    }
+
+    function createScatterEffect() {
+      const cx = effectsCanvas.width / 2, cy = effectsCanvas.height / 2;
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 0.6 - Math.PI * 0.3;
+        state.particles.push({
+          type: 'scatter', x: cx, y: cy,
+          vx: Math.sin(angle) * 15, vy: Math.cos(angle) * -15,
+          life: 0.5, size: 6, color: '#00CFFF'
+        });
+      }
+    }
+
+    // Removed unused 2D functions
+
+    function createExplosion(pos) {
+      for (let i = 0; i < 15; i++) {
+        const screenPos = worldToScreen(pos);
+        state.particles.push({
+          type: 'explosion', x: screenPos.x, y: screenPos.y,
+          vx: (Math.random() - 0.5) * 20, vy: (Math.random() - 0.5) * 20,
+          life: 0.8, size: Math.random() * 8 + 3, color: Math.random() > 0.5 ? '#FF6600' : '#FFB700'
+        });
+      }
+    }
+
+    function createEnemyProjectile(fromPos) {
+      const screenPos = worldToScreen(fromPos);
+      state.particles.push({
+        type: 'enemyShot', x: screenPos.x, y: screenPos.y,
+        vx: (effectsCanvas.width / 2 - screenPos.x) * 0.05,
+        vy: (effectsCanvas.height / 2 - screenPos.y) * 0.05,
+        life: 1, size: 4, color: '#FF2020'
+      });
+    }
+
+    function worldToScreen(pos) {
+      const v = pos.clone().project(camera);
+      return {
+        x: (v.x * 0.5 + 0.5) * effectsCanvas.width,
+        y: (-v.y * 0.5 + 0.5) * effectsCanvas.height
+      };
+    }
+
+    function updateParticles(delta) {
+      effectsCtx.clearRect(0, 0, effectsCanvas.width, effectsCanvas.height);
+      for (let i = state.particles.length - 1; i >= 0; i--) {
+        const p = state.particles[i];
+        p.life -= delta;
+        if (p.life <= 0) { state.particles.splice(i, 1); continue; }
+
+        if (p.type === 'unibeam') {
+          effectsCtx.save();
+          const grad = effectsCtx.createLinearGradient(p.x, 0, p.x, effectsCanvas.height);
+          grad.addColorStop(0, 'rgba(0,207,255,0)');
+          grad.addColorStop(0.3, `rgba(0,207,255,${p.life * 0.8})`);
+          grad.addColorStop(0.7, `rgba(255,255,255,${p.life * 0.6})`);
+          grad.addColorStop(1, `rgba(0,207,255,${p.life * 0.3})`);
+          effectsCtx.fillStyle = grad;
+          effectsCtx.fillRect(p.x - p.w * p.life, 0, p.w * 2 * p.life, effectsCanvas.height);
+          effectsCtx.restore();
+        } else {
+          if (p.vx) p.x += p.vx;
+          if (p.vy) p.y += p.vy;
+          effectsCtx.save();
+          effectsCtx.globalAlpha = Math.min(1, p.life);
+          effectsCtx.fillStyle = p.color;
+          effectsCtx.shadowColor = p.color;
+          effectsCtx.shadowBlur = p.size;
+          effectsCtx.beginPath();
+          effectsCtx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+          effectsCtx.fill();
+          effectsCtx.restore();
+        }
+      }
+    }
+
+    function showDamageFlash() {
+      const overlay = document.getElementById('damage-overlay');
+      overlay.style.opacity = '1';
+      setTimeout(() => overlay.style.opacity = '0', 300);
+      state.killStreak = 0;
+      state.multiplier = 1;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 14: WAVE SPAWNING
+    // ═══════════════════════════════════════════════════════
+    let waveCountdown = 0;
+    let waveCountdownStart = 0;
+
+    function spawnWave() {
+      const level = LEVELS[state.level];
+      if (!level || state.waveIndex >= level.waves.length) return;
+      const wave = level.waves[state.waveIndex];
+      if (wave.boss) {
+        spawnBoss(wave.boss);
+        return;
+      }
+      let totalSpawned = 0;
+      for (const [type, count] of Object.entries(wave)) {
+        for (let i = 0; i < count && totalSpawned < MAX_ENEMIES; i++) {
+          const pos = new THREE.Vector3(
+            (Math.random() - 0.5) * 40,
+            Math.random() * 10 + 2,
+            -(Math.random() * 30 + 15)
+          );
+          if (type === 'turret') { pos.y = 0; pos.z = -(Math.random() * 20 + 10); }
+          state.enemies.push(new Enemy(type, pos));
+          totalSpawned++;
+        }
+      }
+    }
+
+    function spawnBoss(type) {
+      updateCameraState('boss');
+      setTimeout(() => updateCameraState('normal'), 3000);
+      const pos = new THREE.Vector3(0, 5, -40);
+      const boss = new Enemy(type, pos);
+      state.enemies.push(boss);
+    }
+
+    function checkWaveComplete() {
+      // Don't check if wave hasn't spawned yet or we're in countdown
+      if (state.waveSpawning) return;
+      const aliveCount = state.enemies.filter(e => e.alive).length;
+      if (aliveCount === 0 && state.current === GameState.COMBAT && !state.waveSpawning) {
+        state.waveIndex++;
+        const level = LEVELS[state.level];
+        if (state.waveIndex >= level.waves.length) {
+          handleLevelComplete();
+        } else {
+          // Partial health restore between waves
+          state.health = Math.min(state.maxHealth, state.health + 15);
+          waveCountdown = 3;
+          waveCountdownStart = Date.now();
+          state.waveSpawning = true;
+          setTimeout(() => { spawnWave(); state.waveSpawning = false; }, 3000);
+        }
+      }
+    }
+
+    function handleLevelComplete() {
+      state.current = GameState.VICTORY;
+      const levelBonus = (state.level + 1) * 500;
+      state.score += levelBonus;
+      state.upgradePoints += Math.floor(state.score / 10);
+      state.health = state.maxHealth;
+      if (audio.battleFinale) audio.battleFinale.stop();
+
+      // Victory flyby
+      setTimeout(() => {
+        state.current = GameState.LAB;
+        state.level = Math.min(state.level + 1, LEVELS.length - 1);
+        state.missileAmmo = 5 + getUpgradeMultiplier('missileAmmo');
+        state.scatterAmmo = 8;
+        state.avengersUsedThisLevel = false;
+        state.waveIndex = 0;
+        state.enemies = [];
+        setupLabMode();
+      }, 3000);
+    }
+
+    function handlePlayerDeath() {
+      state.current = GameState.DEATH;
+      if (audio.battleFinale) audio.battleFinale.stop();
+      // Death will be shown on HUD
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 15: CAMERA SYSTEM
+    // ═══════════════════════════════════════════════════════
+    const cameraStates = {
+      normal: { fov: 75, shake: 0 },
+      incoming: { fov: 65, shake: 0 },
+      charging: { fov: 70, shake: 0 },
+      firing: { fov: 85, shake: 0 },
+      hit: { fov: 75, shake: 0.3 },
+      boss: { fov: 60, shake: 0 }
+    };
+    let currentCameraState = 'normal';
+    let cameraBasePos = new THREE.Vector3(0, 2, 5);
+
+    function updateCameraState(newState) {
+      currentCameraState = newState;
+      if (newState === 'hit') setTimeout(() => { currentCameraState = 'normal'; }, 300);
+    }
+
+    function updateCamera() {
+      const target = cameraStates[currentCameraState];
+      camera.fov += (target.fov - camera.fov) * 0.05;
+      camera.updateProjectionMatrix();
+      if (target.shake > 0) {
+        camera.position.x = cameraBasePos.x + (Math.random() - 0.5) * target.shake;
+        camera.position.y = cameraBasePos.y + (Math.random() - 0.5) * target.shake;
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 16: HUD RENDERING
+    // ═══════════════════════════════════════════════════════
+    function drawHUD() {
+      hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
+      if (state.current !== GameState.COMBAT && state.current !== GameState.AVENGERS) {
+        if (state.current === GameState.DEATH) drawDeathScreen();
+        if (state.current === GameState.VICTORY) drawVictoryScreen();
+        return;
+      }
+      const w = hudCanvas.width, h = hudCanvas.height;
+
+      // Top bar
+      hudCtx.save();
+      hudCtx.fillStyle = 'rgba(0,207,255,0.8)';
+      hudCtx.font = '12px Orbitron';
+      hudCtx.letterSpacing = '0.2em';
+      hudCtx.fillText('◈ STARK PROTOCOL', 20, 30);
+
+      // Central Aiming Crosshair (tied to Hand Position)
+      hudCtx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+      hudCtx.lineWidth = 1;
+      hudCtx.beginPath();
+      hudCtx.moveTo(state.aimX - 15, state.aimY); hudCtx.lineTo(state.aimX + 15, state.aimY);
+      hudCtx.moveTo(state.aimX, state.aimY - 15); hudCtx.lineTo(state.aimX, state.aimY + 15);
+      hudCtx.stroke();
+      hudCtx.beginPath();
+      hudCtx.arc(state.aimX, state.aimY, 30, 0, Math.PI * 2);
+      hudCtx.stroke();
+
+      // Unibeam Charging/Firing Circle Effect on Crosshair
+      if (currentCameraState === 'firing') {
+        hudCtx.save();
+        hudCtx.strokeStyle = `rgba(0, 207, 255, ${Math.random() * 0.5 + 0.3})`;
+        hudCtx.lineWidth = 15;
+        hudCtx.beginPath();
+        hudCtx.arc(state.aimX, state.aimY, 120 + Math.random() * 30, 0, Math.PI * 2);
+        hudCtx.stroke();
+        hudCtx.strokeStyle = '#FFFFFF';
+        hudCtx.lineWidth = 4;
+        hudCtx.beginPath();
+        hudCtx.arc(state.aimX, state.aimY, 90 + Math.random() * 10, 0, Math.PI * 2);
+        hudCtx.stroke();
+
+        hudCtx.fillStyle = '#00CFFF';
+        hudCtx.font = '16px Orbitron';
+        hudCtx.textAlign = 'center';
+        hudCtx.fillText('UNIBEAM ACTIVE', state.aimX, state.aimY + 160);
+        hudCtx.restore();
+      }
+
+      // Auto-aim Targeting Reticle
+      const aimTarget = findNearestEnemy();
+      if (aimTarget && getAngleToEnemy(aimTarget) < 0.4) {
+        const screenPos = worldToScreen(aimTarget.model.position);
+        hudCtx.strokeStyle = 'rgba(0, 207, 255, 0.8)';
+        hudCtx.lineWidth = 2;
+        const s = 20; // box size
+        // Draw 4 corners
+        hudCtx.beginPath(); hudCtx.moveTo(screenPos.x - s, screenPos.y - s / 2); hudCtx.lineTo(screenPos.x - s, screenPos.y - s); hudCtx.lineTo(screenPos.x - s / 2, screenPos.y - s); hudCtx.stroke();
+        hudCtx.beginPath(); hudCtx.moveTo(screenPos.x + s, screenPos.y - s / 2); hudCtx.lineTo(screenPos.x + s, screenPos.y - s); hudCtx.lineTo(screenPos.x + s / 2, screenPos.y - s); hudCtx.stroke();
+        hudCtx.beginPath(); hudCtx.moveTo(screenPos.x - s, screenPos.y + s / 2); hudCtx.lineTo(screenPos.x - s, screenPos.y + s); hudCtx.lineTo(screenPos.x - s / 2, screenPos.y + s); hudCtx.stroke();
+        hudCtx.beginPath(); hudCtx.moveTo(screenPos.x + s, screenPos.y + s / 2); hudCtx.lineTo(screenPos.x + s, screenPos.y + s); hudCtx.lineTo(screenPos.x + s / 2, screenPos.y + s); hudCtx.stroke();
+        hudCtx.fillStyle = '#00CFFF';
+        hudCtx.font = '10px Orbitron';
+        hudCtx.textAlign = 'center';
+        hudCtx.fillText('TARGET LOCK', screenPos.x, screenPos.y - s - 5);
+      }
+
+      const levelInfo = LEVELS[state.level];
+      hudCtx.textAlign = 'center';
+      hudCtx.font = '14px Rajdhani';
+      hudCtx.fillText(`LEVEL ${state.level + 1} — ${levelInfo.subtitle}`, w / 2, 30);
+
+      hudCtx.textAlign = 'right';
+      hudCtx.font = '16px Orbitron';
+      hudCtx.fillStyle = '#E8F4FF';
+      hudCtx.fillText(`SCORE: ${state.score}`, w - 20, 30);
+
+      // Multiplier
+      if (state.multiplier > 1) {
+        hudCtx.fillStyle = '#FFB700';
+        hudCtx.font = '12px Orbitron';
+        hudCtx.fillText(`x${state.multiplier.toFixed(1)}`, w - 20, 50);
+      }
+
+      // Health bar
+      const hbX = 40, hbY = h - 60, hbW = 220, hbH = 6;
+      hudCtx.fillStyle = 'rgba(255,255,255,0.1)';
+      hudCtx.strokeStyle = 'rgba(0,207,255,0.4)';
+      hudCtx.lineWidth = 1;
+      hudCtx.fillRect(hbX, hbY, hbW, hbH);
+      hudCtx.strokeRect(hbX, hbY, hbW, hbH);
+      const hpPct = state.health / state.maxHealth;
+      const grad = hudCtx.createLinearGradient(hbX, 0, hbX + hbW, 0);
+      if (hpPct < 0.3) {
+        grad.addColorStop(0, '#FF2020'); grad.addColorStop(1, '#FF6600');
+        hudCtx.shadowColor = '#FF2020'; hudCtx.shadowBlur = 10;
+      } else {
+        grad.addColorStop(0, '#00CFFF'); grad.addColorStop(1, '#0066FF');
+        hudCtx.shadowColor = '#00CFFF'; hudCtx.shadowBlur = 10;
+      }
+      hudCtx.fillStyle = grad;
+      hudCtx.fillRect(hbX, hbY, hbW * hpPct, hbH);
+      hudCtx.shadowBlur = 0;
+      hudCtx.fillStyle = '#E8F4FF';
+      hudCtx.font = '11px Orbitron';
+      hudCtx.textAlign = 'left';
+      hudCtx.fillText(`HEALTH ${state.health}/${state.maxHealth}`, hbX, hbY - 8);
+
+      // Weapon readout bottom right
+      hudCtx.textAlign = 'right';
+      hudCtx.fillStyle = '#00CFFF';
+      hudCtx.font = '12px Orbitron';
+      hudCtx.fillText('WEAPON: REPULSOR', w - 230, h - 55);
+      hudCtx.fillStyle = '#E8F4FF';
+      hudCtx.font = '11px Orbitron';
+      hudCtx.fillText(`MISSILES: ${state.missileAmmo}/${5 + getUpgradeMultiplier('missileAmmo')}`, w - 230, h - 35);
+      hudCtx.fillText(`SCATTER: ${state.scatterAmmo}/8`, w - 230, h - 20);
+
+      // Unibeam cooldown arc
+      const uniCooldown = Math.max(0, state.unibeamCooldownEnd - Date.now());
+      if (uniCooldown > 0) {
+        const pct = 1 - uniCooldown / (WEAPONS.unibeam.cooldown * (getUpgradeMultiplier('unibeamCooldown') || 1));
+        hudCtx.strokeStyle = '#FFB700';
+        hudCtx.lineWidth = 3;
+        hudCtx.beginPath();
+        hudCtx.arc(w - 100, h - 120, 25, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
+        hudCtx.stroke();
+        hudCtx.fillStyle = '#FFB700';
+        hudCtx.font = '9px Orbitron';
+        hudCtx.textAlign = 'center';
+        hudCtx.fillText('UNIBEAM', w - 100, h - 115);
+        hudCtx.fillText(Math.ceil(uniCooldown / 1000) + 's', w - 100, h - 125);
+      }
+
+      // Enemy radar top left
+      drawRadar(w, h);
+
+      // Combat start banner
+      if (state.combatStartTime > 0 && Date.now() - state.combatStartTime < 4000) {
+        const bannerElapsed = (Date.now() - state.combatStartTime) / 1000;
+        if (bannerElapsed < 1.5) {
+          hudCtx.save();
+          hudCtx.globalAlpha = Math.min(1, bannerElapsed * 2);
+          hudCtx.fillStyle = '#00CFFF';
+          hudCtx.font = '28px Orbitron';
+          hudCtx.textAlign = 'center';
+          hudCtx.fillText('COMBAT MODE ENGAGED', w / 2, h / 2 - 60);
+          hudCtx.font = '18px Rajdhani';
+          hudCtx.fillStyle = '#FFB700';
+          hudCtx.fillText(`LEVEL ${state.level + 1} — ${LEVELS[state.level].name}`, w / 2, h / 2 - 30);
+          hudCtx.restore();
+        }
+      }
+
+      // Wave countdown
+      if (waveCountdown > 0) {
+        const remaining = Math.max(0, 3 - (Date.now() - waveCountdownStart) / 1000);
+        if (remaining > 0) {
+          hudCtx.font = '48px Orbitron';
+          hudCtx.fillStyle = '#00CFFF';
+          hudCtx.textAlign = 'center';
+          hudCtx.fillText(Math.ceil(remaining), w / 2, h / 2);
+          hudCtx.font = '14px Rajdhani';
+          hudCtx.fillText(`WAVE ${state.waveIndex + 1} INCOMING`, w / 2, h / 2 + 30);
+        } else { waveCountdown = 0; }
+      }
+
+      // Missile lock indicator
+      if (missileLockStart) {
+        drawMissileLock(w, h);
+      }
+
+      // Avengers progress
+      if (avengersProgress > 0) {
+        hudCtx.globalAlpha = avengersProgress * 0.3;
+        hudCtx.fillStyle = '#C9A84C';
+        hudCtx.font = '36px Rajdhani';
+        hudCtx.textAlign = 'center';
+        hudCtx.fillText('AVENGERS', w / 2, h / 2 - 20);
+        hudCtx.fillText('ASSEMBLE', w / 2, h / 2 + 20);
+        hudCtx.globalAlpha = 1;
+      }
+
+      // Face mesh warning
+      if (!state.faceDetected) {
+        hudCtx.fillStyle = '#FF2020';
+        hudCtx.font = '10px Orbitron';
+        hudCtx.textAlign = 'left';
+        hudCtx.fillText('⚠ FACE NOT DETECTED', 20, h - 20);
+      }
+      if (!state.bothHandsVisible) {
+        hudCtx.fillStyle = '#FFB700';
+        hudCtx.font = '10px Orbitron';
+        hudCtx.textAlign = 'left';
+        hudCtx.fillText('⚠ DUAL HAND REQUIRED FOR UNIBEAM/MISSILES', 20, h - 5);
+      }
+
+      hudCtx.restore();
+    }
+
+    function drawRadar(w, h) {
+      const rx = 60, ry = 100, rr = 40;
+      hudCtx.save();
+      hudCtx.strokeStyle = 'rgba(0,207,255,0.3)';
+      hudCtx.lineWidth = 1;
+      hudCtx.beginPath();
+      hudCtx.arc(rx, ry, rr, 0, Math.PI * 2);
+      hudCtx.stroke();
+      hudCtx.beginPath(); hudCtx.arc(rx, ry, rr / 2, 0, Math.PI * 2); hudCtx.stroke();
+      // Player dot center
+      hudCtx.fillStyle = '#00CFFF';
+      hudCtx.beginPath(); hudCtx.arc(rx, ry, 3, 0, Math.PI * 2); hudCtx.fill();
+      // Enemy dots
+      for (const e of state.enemies) {
+        if (!e.alive) continue;
+        const dx = (e.model.position.x - camera.position.x) / 50 * rr;
+        const dz = (e.model.position.z - camera.position.z) / 50 * rr;
+        if (Math.sqrt(dx * dx + dz * dz) > rr) continue;
+        const colors = { drone: '#FF2020', heavyDrone: '#FF6600', jet: '#FFFFFF', turret: '#FFB700' };
+        hudCtx.fillStyle = colors[e.type] || '#FF2020';
+        hudCtx.beginPath(); hudCtx.arc(rx + dx, ry + dz, e.isBoss ? 4 : 2, 0, Math.PI * 2); hudCtx.fill();
+      }
+      hudCtx.restore();
+    }
+
+    function drawMissileLock(w, h) {
+      if (!missileTarget || !missileTarget.alive) return;
+      const screenPos = worldToScreen(missileTarget.model.position);
+      const lockPct = Math.min(1, (Date.now() - missileLockStart) / 800);
+      const size = 40 - lockPct * 15;
+      hudCtx.save();
+      hudCtx.strokeStyle = missileLocked ? '#FFFFFF' : '#FF4444';
+      hudCtx.lineWidth = 2;
+      const s = size;
+      // Corner brackets
+      const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+      for (const [cx, cy] of corners) {
+        hudCtx.beginPath();
+        hudCtx.moveTo(screenPos.x + cx * s, screenPos.y + cy * s * 0.3);
+        hudCtx.lineTo(screenPos.x + cx * s, screenPos.y + cy * s);
+        hudCtx.lineTo(screenPos.x + cx * s * 0.3, screenPos.y + cy * s);
+        hudCtx.stroke();
+      }
+      if (missileLocked) {
+        hudCtx.fillStyle = '#FFFFFF';
+        hudCtx.font = '10px Orbitron';
+        hudCtx.textAlign = 'center';
+        hudCtx.fillText('LOCKED', screenPos.x, screenPos.y - s - 5);
+      }
+      hudCtx.restore();
+    }
+
+    function drawDeathScreen() {
+      const w = hudCanvas.width, h = hudCanvas.height;
+      hudCtx.save();
+      hudCtx.fillStyle = 'rgba(5,10,20,0.85)';
+      hudCtx.fillRect(0, 0, w, h);
+      hudCtx.fillStyle = '#FF2020';
+      hudCtx.font = '36px Orbitron';
+      hudCtx.textAlign = 'center';
+      hudCtx.fillText('SUIT COMPROMISED', w / 2, h / 2 - 40);
+      hudCtx.fillStyle = '#E8F4FF';
+      hudCtx.font = '18px Rajdhani';
+      hudCtx.fillText(`SCORE: ${state.score}`, w / 2, h / 2 + 10);
+      hudCtx.fillText(`LEVEL: ${state.level + 1}`, w / 2, h / 2 + 40);
+      hudCtx.fillStyle = '#00CFFF';
+      hudCtx.font = '14px Orbitron';
+      hudCtx.fillText('RAISE BOTH PALMS TO RETRY', w / 2, h / 2 + 90);
+      hudCtx.restore();
+
+      // Check for retry gesture
+      if (leftHandLandmarks && rightHandLandmarks) {
+        const lg = detectGestures(leftHandLandmarks);
+        const rg = detectGestures(rightHandLandmarks);
+        if (lg === 'PALM_THRUST' && rg === 'PALM_THRUST') {
+          state.current = GameState.COMBAT;
+          state.health = state.maxHealth;
+          state.waveIndex = 0;
+          state.enemies.forEach(e => { if (e.model) scene.remove(e.model); });
+          state.enemies = [];
+          state.killStreak = 0; state.multiplier = 1;
+          startCombat();
+        }
+      }
+    }
+
+    function drawVictoryScreen() {
+      const w = hudCanvas.width, h = hudCanvas.height;
+      hudCtx.save();
+      hudCtx.fillStyle = 'rgba(5,10,20,0.7)';
+      hudCtx.fillRect(0, 0, w, h);
+      hudCtx.fillStyle = '#FFB700';
+      hudCtx.font = '36px Orbitron';
+      hudCtx.textAlign = 'center';
+      hudCtx.fillText('LEVEL COMPLETE', w / 2, h / 2 - 40);
+      hudCtx.fillStyle = '#E8F4FF';
+      hudCtx.font = '18px Rajdhani';
+      hudCtx.fillText(`SCORE: ${state.score}`, w / 2, h / 2 + 10);
+      hudCtx.fillText(`UPGRADE POINTS: +${Math.floor(state.score / 10)}`, w / 2, h / 2 + 40);
+      hudCtx.restore();
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 17: LAB MODE
+    // ═══════════════════════════════════════════════════════
+    const labPanels = [];
+
+    function setupLabMode() {
+      state.current = GameState.LAB;
+      // Show lab model, hide others
+      if (models.lab) models.lab.visible = true;
+      state.enemies.forEach(e => { if (e.model) { scene.remove(e.model); } });
+      state.enemies = [];
+
+      camera.position.set(0, 2, 5);
+      camera.lookAt(0, 1.5, 0);
+      cameraBasePos.set(0, 2, 5);
+      arcLight.intensity = 2;
+
+      // Create floating holographic panels
+      createLabPanels();
+
+      // Dust particles
+      createDustParticles();
+    }
+
+    function createLabPanels() {
+      // Remove old panels
+      labPanels.forEach(p => scene.remove(p.group));
+      labPanels.length = 0;
+
+      const panelConfigs = [
+        { pos: [-3, 2.5, -2], title: 'SUIT STATS', content: 'stats' },
+        { pos: [0, 2.8, -3], title: 'LEVEL SELECT', content: 'levels' },
+        { pos: [3, 2.5, -2], title: 'UPGRADES', content: 'upgrades' }
+      ];
+
+      for (const cfg of panelConfigs) {
+        const group = new THREE.Group();
+        // Panel background
+        const panelGeo = new THREE.PlaneGeometry(2.5, 2);
+        const panelMat = new THREE.MeshStandardMaterial({
+          color: 0x0066ff, transparent: true, opacity: 0.12,
+          emissive: 0x0066ff, emissiveIntensity: 0.1, side: THREE.DoubleSide
+        });
+        const panel = new THREE.Mesh(panelGeo, panelMat);
+        group.add(panel);
+
+        // Border frame
+        const edges = new THREE.EdgesGeometry(panelGeo);
+        const lineMat = new THREE.LineBasicMaterial({ color: 0x00cfff, transparent: true, opacity: 0.6 });
+        const wireframe = new THREE.LineSegments(edges, lineMat);
+        group.add(wireframe);
+
+        // Title text as a small glowing bar at top
+        const titleBar = new THREE.Mesh(
+          new THREE.PlaneGeometry(2, 0.15),
+          new THREE.MeshStandardMaterial({ color: 0x00cfff, emissive: 0x00cfff, emissiveIntensity: 0.8, transparent: true, opacity: 0.7 })
+        );
+        titleBar.position.y = 0.85;
+        group.add(titleBar);
+
+        group.position.set(...cfg.pos);
+        group.lookAt(camera.position);
+        scene.add(group);
+        labPanels.push({ group, config: cfg, hover: false, baseY: cfg.pos[1] });
+      }
+    }
+
+    let dustParticles = null;
+    function createDustParticles() {
+      if (dustParticles) scene.remove(dustParticles);
+      const count = 200;
+      const geo = new THREE.BufferGeometry();
+      const positions = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        positions[i * 3] = (Math.random() - 0.5) * 20;
+        positions[i * 3 + 1] = Math.random() * 8;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * 20;
+      }
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const mat = new THREE.PointsMaterial({ color: 0x00cfff, size: 0.03, transparent: true, opacity: 0.4 });
+      dustParticles = new THREE.Points(geo, mat);
+      scene.add(dustParticles);
+    }
+
+    function updateLabMode() {
+      const t = Date.now() * 0.001;
+      // Panel bob animation
+      for (const panel of labPanels) {
+        panel.group.position.y = panel.baseY + Math.sin(t + panel.config.pos[0]) * 0.1;
+      }
+      // Dust float
+      if (dustParticles) {
+        const pos = dustParticles.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+          pos.array[i * 3 + 1] += Math.sin(t + i) * 0.001;
+          if (pos.array[i * 3 + 1] > 8) pos.array[i * 3 + 1] = 0;
+        }
+        pos.needsUpdate = true;
+      }
+    }
+
+    function handleLabInteraction() {
+      // Detect hand reaching toward panels
+      const hand = rightHandLandmarks || leftHandLandmarks;
+      if (!hand) return;
+      const handX = (0.5 - hand[9].x) * 10; // Map hand position to 3D
+      const handY = (0.5 - hand[9].y) * 6 + 2;
+
+      for (const panel of labPanels) {
+        const dx = Math.abs(panel.group.position.x - handX);
+        const dy = Math.abs(panel.group.position.y - handY);
+        const inRange = dx < 2 && dy < 1.5;
+
+        if (inRange && !panel.hover) {
+          panel.hover = true;
+          panel.group.children[0].material.opacity = 0.25;
+          panel.group.children[0].material.emissiveIntensity = 0.3;
+        } else if (!inRange && panel.hover) {
+          panel.hover = false;
+          panel.group.children[0].material.opacity = 0.12;
+          panel.group.children[0].material.emissiveIntensity = 0.1;
+        }
+
+        // Grab gesture - pinch or close fingers while in range
+        if (inRange) {
+          const gesture = detectGestures(hand);
+          if (gesture === 'FIST' && panel.config.content === 'levels') {
+            // Select current level
+            state.selectedLevel = state.level;
+          }
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 18: SUIT UP SEQUENCE
+    // ═══════════════════════════════════════════════════════
+    function startSuitUpSequence() {
+      if (state.current !== GameState.LAB) return;
+      if (state.suitUpInProgress) return;
+      state.current = GameState.SUIT_UP;
+      state.suitUpInProgress = true;
+
+      // Hide lab panels
+      labPanels.forEach(p => { p.group.visible = false; });
+      if (dustParticles) dustParticles.visible = false;
+
+      if (audio.suitUp) audio.suitUp.play();
+
+      const startTime = Date.now();
+      if (models.suit) { models.suit.visible = true; models.suit.position.set(0, 0, 0); }
+
+      function suitUpTick() {
+        const elapsed = (Date.now() - startTime) / 1000;
+
+        if (elapsed < 0.5) {
+          // Screen darkens
+          effectsCtx.fillStyle = `rgba(5,10,20,${elapsed})`;
+          effectsCtx.fillRect(0, 0, effectsCanvas.width, effectsCanvas.height);
+        } else if (elapsed < 1.5) {
+          // Boots fly in
+          if (models.suit) models.suit.position.y = -2 + (elapsed - 0.5) * 2;
+        } else if (elapsed < 2.5) {
+          // Leg armor
+          if (models.suit) models.suit.scale.y = Math.min(1, (elapsed - 1.5) + 0.5);
+        } else if (elapsed < 3.5) {
+          // Chest piece
+          if (models.suit) models.suit.scale.set(1, 1, Math.min(1, (elapsed - 2.5) + 0.5));
+        } else if (elapsed < 4.0) {
+          // ARC REACTOR PULSE — THE DRAMATIC MOMENT
+          const pulseProgress = (elapsed - 3.5) / 0.5;
+          arcLight.intensity = 2 + 18 * Math.sin(pulseProgress * Math.PI);
+          arcLight.color.setHex(pulseProgress < 0.5 ? 0xffffff : 0x00cfff);
+          // Screen flash
+          effectsCtx.fillStyle = `rgba(0,207,255,${0.5 * Math.sin(pulseProgress * Math.PI)})`;
+          effectsCtx.fillRect(0, 0, effectsCanvas.width, effectsCanvas.height);
+        } else if (elapsed < 5.5) {
+          // Gauntlets
+          arcLight.intensity = 2;
+          arcLight.color.setHex(0x00cfff);
+        } else if (elapsed < 6.5) {
+          // Helmet descends
+          if (models.suit) models.suit.position.y = 0;
+        } else if (elapsed < 7.0) {
+          // Screen goes dark
+          effectsCtx.fillStyle = 'rgba(5,10,20,1)';
+          effectsCtx.fillRect(0, 0, effectsCanvas.width, effectsCanvas.height);
+        } else if (elapsed < 7.5) {
+          // HUD boots up with scan lines
+          if (audio.hudStartup && elapsed > 7.0 && elapsed < 7.1) audio.hudStartup.play();
+          const scanY = ((elapsed - 7.0) / 0.5) * effectsCanvas.height;
+          effectsCtx.clearRect(0, 0, effectsCanvas.width, effectsCanvas.height);
+          effectsCtx.strokeStyle = 'rgba(0,207,255,0.5)';
+          effectsCtx.lineWidth = 2;
+          effectsCtx.beginPath();
+          effectsCtx.moveTo(0, scanY);
+          effectsCtx.lineTo(effectsCanvas.width, scanY);
+          effectsCtx.stroke();
+        } else if (elapsed >= 8.0) {
+          // Combat begins!
+          effectsCtx.clearRect(0, 0, effectsCanvas.width, effectsCanvas.height);
+          // Stop suit up audio
+          if (audio.suitUp) audio.suitUp.stop();
+          state.suitUpInProgress = false;
+          startCombat();
+          return;
+        }
+
+        if (state.current === GameState.SUIT_UP) requestAnimationFrame(suitUpTick);
+      }
+      suitUpTick();
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 19: COMBAT INITIALIZATION
+    // ═══════════════════════════════════════════════════════
+    function startCombat() {
+      state.current = GameState.COMBAT;
+      state.waveIndex = 0;
+      state.avengersUsedThisLevel = false;
+      state.killStreak = 0;
+      state.multiplier = 1;
+      state.combatStartTime = Date.now();
+
+      // CRITICAL: Mark wave as spawning so checkWaveComplete doesn't fire
+      state.waveSpawning = true;
+
+      // Stop any lingering suit up audio
+      if (audio.suitUp) audio.suitUp.stop();
+
+      // Hide lab
+      if (models.lab) models.lab.visible = false;
+      if (dustParticles) dustParticles.visible = false;
+      labPanels.forEach(p => p.group.visible = false);
+
+      // Clear any old enemies
+      state.enemies.forEach(e => { if (e.model) scene.remove(e.model); });
+      state.enemies = [];
+
+      // Setup level skybox
+      setupLevelEnvironment(state.level);
+
+      // Camera for combat
+      cameraBasePos.set(0, 2, 5);
+      camera.position.copy(cameraBasePos);
+      camera.lookAt(0, 2, -10);
+
+      // Start music
+      if (audio.battleFinale) { audio.battleFinale.stop(); audio.battleFinale.play(); }
+
+      // Flash "COMBAT MODE ENGAGED"
+      console.log(`COMBAT STARTED — Level ${state.level + 1}: ${LEVELS[state.level].name}`);
+
+      // First wave after countdown
+      waveCountdown = 3;
+      waveCountdownStart = Date.now();
+      setTimeout(() => {
+        spawnWave();
+        state.waveSpawning = false;
+      }, 3000);
+    }
+
+    function setupLevelEnvironment(levelIdx) {
+      // Remove old skybox
+      scene.background = null;
+      scene.fog = null;
+
+      const configs = {
+        orbit: { bg: 0x0a1628, fog: [0x0a1628, 50, 200], amb: 0.6 },
+        city: { bg: 0x1a0e00, fog: [0x1a0e00, 30, 150], amb: 0.5 },
+        ocean: { bg: 0x0a1418, fog: [0x0a1418, 30, 180], amb: 0.4 },
+        space: { bg: 0x020208, fog: [0x020208, 80, 300], amb: 0.3 },
+        stark_tower: { bg: 0x0a0a14, fog: [0x0a0a14, 40, 200], amb: 0.5 }
+      };
+
+      const level = LEVELS[levelIdx];
+      const cfg = configs[level.skybox] || configs.orbit;
+      scene.background = new THREE.Color(cfg.bg);
+      scene.fog = new THREE.Fog(cfg.fog[0], cfg.fog[1], cfg.fog[2]);
+      ambientLight.intensity = cfg.amb;
+
+      // Add stars for space levels
+      if (level.skybox === 'space' || level.skybox === 'orbit') {
+        createStarField();
+      }
+
+      // Ground plane for city/ocean/stark_tower
+      if (['city', 'ocean', 'stark_tower'].includes(level.skybox)) {
+        const groundGeo = new THREE.PlaneGeometry(500, 500);
+        const groundMat = new THREE.MeshStandardMaterial({
+          color: level.skybox === 'ocean' ? 0x0a2a3a : 0x1a1a2a,
+          roughness: 0.9
+        });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -5;
+        ground.name = 'ground';
+        scene.add(ground);
+      }
+    }
+
+    let starField = null;
+    function createStarField() {
+      if (starField) scene.remove(starField);
+      const count = 1000;
+      const geo = new THREE.BufferGeometry();
+      const positions = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        positions[i * 3] = (Math.random() - 0.5) * 400;
+        positions[i * 3 + 1] = (Math.random() - 0.5) * 400;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * 400;
+      }
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5, transparent: true, opacity: 0.8 });
+      starField = new THREE.Points(geo, mat);
+      scene.add(starField);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 20: AVENGERS EASTER EGG
+    // ═══════════════════════════════════════════════════════
+    let avengersLogoTexture = null;
+    function loadAvengersLogo() {
+      const texLoader = new THREE.TextureLoader();
+      texLoader.load('images/avengers-png-logo-27969.png', (tex) => { avengersLogoTexture = tex; },
+        undefined, () => console.warn('Avengers logo not found'));
+    }
+
+    function triggerAvengersEasterEgg() {
+      if (state.avengersUsedThisLevel) return;
+      state.avengersUsedThisLevel = true;
+      state.current = GameState.AVENGERS;
+
+      // Stop battle music, play Avengers theme
+      if (audio.battleFinale) audio.battleFinale.pause();
+      if (audio.avengersTheme) audio.avengersTheme.play();
+
+      const startTime = Date.now();
+      const w = effectsCanvas.width, h = effectsCanvas.height;
+
+      // Show logo in sky
+      let logoPlane = null;
+      if (avengersLogoTexture) {
+        const logoGeo = new THREE.PlaneGeometry(15, 10);
+        const logoMat = new THREE.MeshBasicMaterial({ map: avengersLogoTexture, transparent: true, opacity: 0, side: THREE.DoubleSide });
+        logoPlane = new THREE.Mesh(logoGeo, logoMat);
+        logoPlane.position.set(0, 20, -30);
+        scene.add(logoPlane);
+      }
+
+      // Shield ricochet
+      let shieldModel = null;
+      if (models.shield) {
+        shieldModel = models.shield.clone();
+        shieldModel.visible = true;
+        shieldModel.position.set(-20, 5, -10);
+        scene.add(shieldModel);
+      }
+
+      function avengersSequenceTick() {
+        const elapsed = (Date.now() - startTime) / 1000;
+
+        // Logo visibility
+        if (logoPlane) {
+          if (elapsed < 6) logoPlane.material.opacity = Math.min(1, elapsed * 0.5);
+          else logoPlane.material.opacity = Math.max(0, 1 - (elapsed - 6) / 2);
+        }
+
+        // 0-1s: Flash and logo
+        if (elapsed < 1) {
+          effectsCtx.fillStyle = `rgba(255,255,255,${Math.max(0, 0.5 - elapsed * 0.5)})`;
+          effectsCtx.fillRect(0, 0, w, h);
+        }
+
+        // 1-2s: Shield ricochet
+        if (elapsed >= 1 && elapsed < 2 && shieldModel) {
+          const t = (elapsed - 1);
+          shieldModel.position.x = -20 + t * 40;
+          shieldModel.position.y = 5 + Math.sin(t * Math.PI * 3) * 3;
+          shieldModel.rotation.y += 0.3;
+        }
+
+        // 2-3s: Lightning strikes
+        if (elapsed >= 2 && elapsed < 3) {
+          if (Math.random() > 0.7) {
+            effectsCtx.save();
+            effectsCtx.strokeStyle = '#FFFFFF';
+            effectsCtx.lineWidth = 3;
+            effectsCtx.shadowColor = '#00CFFF';
+            effectsCtx.shadowBlur = 20;
+            let lx = Math.random() * w, ly = 0;
+            effectsCtx.beginPath();
+            effectsCtx.moveTo(lx, ly);
+            for (let s = 0; s < 8; s++) {
+              lx += (Math.random() - 0.5) * 40;
+              ly += h / 8;
+              effectsCtx.lineTo(lx, ly);
+            }
+            effectsCtx.stroke();
+            effectsCtx.restore();
+          }
+        }
+
+        // 3-4s: Hulk shockwave
+        if (elapsed >= 3 && elapsed < 4) {
+          const shockT = (elapsed - 3);
+          effectsCtx.save();
+          effectsCtx.strokeStyle = `rgba(0,255,100,${1 - shockT})`;
+          effectsCtx.lineWidth = 4;
+          effectsCtx.beginPath();
+          effectsCtx.arc(w / 2, h * 0.7, shockT * 300, 0, Math.PI * 2);
+          effectsCtx.stroke();
+          effectsCtx.restore();
+        }
+
+        // 4-5s: All enemies explode
+        if (elapsed >= 4 && elapsed < 4.1) {
+          for (const e of state.enemies) {
+            if (e.alive) {
+              // Score bonus
+              const bonusPoints = e.points * 2;
+              state.score += bonusPoints;
+              // Floating score number
+              const sp = worldToScreen(e.model.position);
+              state.particles.push({
+                type: 'scoreFloat', x: sp.x, y: sp.y, vy: -2,
+                life: 2, text: `+${bonusPoints}`, color: '#C9A84C'
+              });
+              e.die();
+            }
+          }
+        }
+
+        // 5-6s: Score numbers floating
+        // Handled by particle system
+
+        // 8s: Rift closes
+        if (elapsed >= 8 && elapsed < 8.5 && shieldModel) {
+          scene.remove(shieldModel);
+        }
+
+        // 10s: Resume combat
+        if (elapsed >= 10) {
+          if (logoPlane) scene.remove(logoPlane);
+          if (shieldModel) scene.remove(shieldModel);
+          state.current = GameState.COMBAT;
+          if (audio.avengersTheme) audio.avengersTheme.stop();
+          if (audio.battleFinale) audio.battleFinale.play();
+          effectsCtx.clearRect(0, 0, w, h);
+          // Auto-spawn next wave
+          state.waveIndex++;
+          const level = LEVELS[state.level];
+          if (state.waveIndex < level.waves.length) {
+            waveCountdown = 3; waveCountdownStart = Date.now();
+            setTimeout(() => spawnWave(), 3000);
+          } else {
+            handleLevelComplete();
+          }
+          return;
+        }
+
+        requestAnimationFrame(avengersSequenceTick);
+      }
+      avengersSequenceTick();
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 21: HUD LAB OVERLAY
+    // ═══════════════════════════════════════════════════════
+    function drawLabHUD() {
+      const w = hudCanvas.width, h = hudCanvas.height;
+      hudCtx.clearRect(0, 0, w, h);
+      hudCtx.save();
+
+      // Top bar
+      hudCtx.fillStyle = 'rgba(0,207,255,0.6)';
+      hudCtx.font = '14px Orbitron';
+      hudCtx.fillText('◈ STARK INDUSTRIES LAB', 20, 30);
+
+      hudCtx.textAlign = 'right';
+      hudCtx.fillStyle = '#FFB700';
+      hudCtx.font = '14px Orbitron';
+      hudCtx.fillText(`UPGRADE POINTS: ${state.upgradePoints}`, w - 20, 30);
+
+      // Panel labels in 2D overlay
+      hudCtx.textAlign = 'center';
+      hudCtx.font = '16px Rajdhani';
+      hudCtx.fillStyle = '#00CFFF';
+
+      // Left panel label
+      hudCtx.fillText('SUIT STATS', w * 0.2, h * 0.3);
+      hudCtx.font = '11px Orbitron';
+      hudCtx.fillStyle = '#E8F4FF';
+      hudCtx.fillText(`HEALTH: ${state.maxHealth}`, w * 0.2, h * 0.35);
+      hudCtx.fillText(`MISSILES: ${state.missileAmmo}`, w * 0.2, h * 0.38);
+
+      // Center panel - level select
+      hudCtx.font = '16px Rajdhani';
+      hudCtx.fillStyle = '#00CFFF';
+      hudCtx.fillText('SELECT LEVEL', w * 0.5, h * 0.25);
+      for (let i = 0; i <= state.level && i < LEVELS.length; i++) {
+        hudCtx.fillStyle = i === state.selectedLevel ? '#FFB700' : '#E8F4FF';
+        hudCtx.font = '12px Rajdhani';
+        hudCtx.fillText(`${i + 1}. ${LEVELS[i].name}`, w * 0.5, h * 0.3 + i * 18);
+      }
+
+      // Right panel - upgrades
+      hudCtx.font = '16px Rajdhani';
+      hudCtx.fillStyle = '#00CFFF';
+      hudCtx.fillText('UPGRADES', w * 0.8, h * 0.25);
+      let row = 0;
+      for (const [key, u] of Object.entries(upgradeTree)) {
+        const cost = u.level < u.max ? u.cost[u.level] : 'MAX';
+        hudCtx.fillStyle = u.level >= u.max ? '#00CFFF' : '#E8F4FF';
+        hudCtx.font = '10px Orbitron';
+        hudCtx.fillText(`${u.label} [${u.level}/${u.max}] ${cost}`, w * 0.8, h * 0.3 + row * 16);
+        row++;
+      }
+
+      // Bottom instruction
+      hudCtx.fillStyle = 'rgba(0,207,255,0.5)';
+      hudCtx.font = '12px Rajdhani';
+      hudCtx.textAlign = 'center';
+      hudCtx.fillText('CROSS ARMS OVER CHEST THEN SPREAD TO SUIT UP', w / 2, h - 30);
+
+      hudCtx.restore();
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 22: SCORE FLOAT PARTICLES
+    // ═══════════════════════════════════════════════════════
+    function drawScoreFloats() {
+      for (const p of state.particles) {
+        if (p.type === 'scoreFloat') {
+          effectsCtx.save();
+          effectsCtx.globalAlpha = Math.min(1, p.life);
+          effectsCtx.fillStyle = p.color;
+          effectsCtx.font = '16px Orbitron';
+          effectsCtx.textAlign = 'center';
+          effectsCtx.fillText(p.text, p.x, p.y);
+          effectsCtx.restore();
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 23: MAIN GAME LOOP
+    // ═══════════════════════════════════════════════════════
+    let lastTime = performance.now();
+    let gestureProcessInterval = 0;
+
+    function gameLoop(time) {
+      const delta = Math.min((time - lastTime) / 1000, 0.05);
+      lastTime = time;
+
+      // Process gestures at ~30fps
+      gestureProcessInterval += delta;
+      if (gestureProcessInterval > 0.033) {
+        processGestures();
+        gestureProcessInterval = 0;
+      }
+
+      if (state.current === GameState.LAB) {
+        updateLabMode();
+        drawLabHUD();
+      } else if (state.current === GameState.COMBAT) {
+        // Update enemies
+        for (const e of state.enemies) e.update(delta);
+        // Clean dead enemies
+        state.enemies = state.enemies.filter(e => e.alive);
+        // Check wave completion
+        checkWaveComplete();
+        // Camera
+        updateCamera();
+        // HUD
+        drawHUD();
+      } else if (state.current === GameState.DEATH || state.current === GameState.VICTORY) {
+        drawHUD();
+      }
+
+      // Always render
+      updateParticles(delta);
+      drawScoreFloats();
+      renderer.render(scene, camera);
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SECTION 24: INITIALIZATION
+    // ═══════════════════════════════════════════════════════
+    const startScreen = document.getElementById('start-screen');
+    const loadingScreen = document.getElementById('loading-screen');
+
+    startScreen.addEventListener('click', async () => {
+      startScreen.style.display = 'none';
+      loadingScreen.style.display = 'flex';
+
+      // Initialize audio in user gesture
+      initAudio();
+
+      // Initialize MediaPipe
+      initMediaPipe();
+
+      // Load Avengers logo texture
+      loadAvengersLogo();
+
+      // Load all models
+      await loadAllModels();
+
+      // Start camera
+      await startCamera();
+
+      // Hide loading, enter lab
+      loadingScreen.style.display = 'none';
+      setupLabMode();
+
+      // Start game loop
+      requestAnimationFrame(gameLoop);
+    });
+
+    console.log('Iron Man: Stark Protocol initialized. Click start screen to begin.');
+  </script>
+</body>
+
+</html>
